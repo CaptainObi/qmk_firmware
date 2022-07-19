@@ -16,7 +16,6 @@ enum layers {
 
 uint8_t  timeout_mode           = 0;  // 0 = 1m30s, 1 = 2m, 2 = 5m, 3 = 1m
 uint32_t oled_sleep_timer;
-uint8_t  bongo_mode = 1;
 
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
@@ -252,6 +251,13 @@ uint8_t bongo_current_caps_frame     = 0;
 uint8_t bongo_state_tap = 0;
 uint32_t anim_timer     = 0;
 
+bool process_record_user(uint16_t keycode, keyrecord_t* record) {
+    if (record->event.pressed) {
+        bongo_state_tap = 1;
+    }
+    return true;
+}
+
 static char* get_wpm_str(void) {
     static char wpm_str[5] = "";
     if (wpm() > 0) {
@@ -300,7 +306,7 @@ void draw_bongo_dynamic(void) {
         } else if (mod_state & MOD_MASK_GUI) {
             bongo_current_tap_frame = (bongo_current_tap_frame + 1) % BONGO_TAP_FRAMES;
             oled_write_raw_P(bongo_filled_blushing_tap[abs((BONGO_TAP_FRAMES - 1) - bongo_current_tap_frame)] , DEFAULT_ANIM_SIZE);
-        } else if (wpm() > 140) {
+        } else if (wpm() > 40) {
             bongo_current_tap_frame = (bongo_current_tap_frame + 1) % BONGO_TAP_FRAMES;
             oled_write_raw_P(bongo_filled_tap_cute[abs((BONGO_TAP_FRAMES - 1) - bongo_current_tap_frame)] , DEFAULT_ANIM_SIZE);
         } else {
@@ -346,17 +352,49 @@ void draw_bongo_dynamic(void) {
 
 }
 
-bool oled_task_user(void) {
-    if (is_keyboard_master()) {
-        draw_bongo_dynamic();
-    }
-    if (!is_keyboard_master()) {
-        draw_bongo_dynamic();
-        // render_logo();
-        // oled_set_cursor(0,13);
-        // render_status();
+
+bool check_repaint(void) {
+    // If OLED wakeup was requested, reset the sleep timer and do a repaint.
+    if (wpm() != 000) {
+
+
+        if (!is_oled_on()) {
+            oled_on();
+        }
+
+        oled_sleep_timer       = timer_read32() + get_timeout();
+        return true;
     }
 
+    // If the OLED is currently off, skip the repaint (which would turn the
+    // OLED on if the image is changed in any way).
+    if (!is_oled_on()) {
+        return false;
+    }
+
+    // If the sleep timer has expired while the OLED was on, turn the OLED off.
+    if (timer_expired32(timer_read32(), oled_sleep_timer)) {
+        oled_off();
+        return false;
+    }
+
+    return true;
+}
+
+bool oled_task_user(void) {
+    if (check_repaint()) {
+        if (is_keyboard_master()) {
+            draw_bongo_dynamic();
+        }
+
+        if (!is_keyboard_master()) {
+            draw_bongo_dynamic();
+            // render_logo();
+            // oled_set_cursor(0,13);
+            // render_status();
+        }
+
+    }
     return false;
 }
 #endif
